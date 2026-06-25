@@ -5,7 +5,7 @@ from pathlib import Path
 from app.stages.base import BaseStage
 from app.config import MUSICGEN_MODEL
 
-_STUB_STUB_SAMPLE_RATE = 44100  # used only by _silence_wav_stereo (stub path)
+_STUB_SAMPLE_RATE = 44100  # used only by _silence_wav_stereo (stub path)
 _MUSIC_MODEL = None  # module-level lazy singleton
 _MUSIC_LOCK = threading.Lock()
 
