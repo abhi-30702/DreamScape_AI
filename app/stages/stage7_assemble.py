@@ -1,6 +1,5 @@
-import os
+import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 from app.stages.base import BaseStage
 
@@ -8,25 +7,28 @@ from app.stages.base import BaseStage
 class Stage7Assemble(BaseStage):
     stage_num = 7
 
-    def _run_real(self, input: dict) -> dict:
-        return self._assemble(input)
+    def _run_real(self, stage_input: dict) -> dict:
+        return self._assemble(stage_input)
 
-    def _run_stub(self, input: dict) -> dict:
-        return self._assemble(input)
+    def _run_stub(self, stage_input: dict) -> dict:
+        return self._assemble(stage_input)
 
-    def _assemble(self, input: dict) -> dict:
+    def _assemble(self, stage_input: dict) -> dict:
         import numpy as np
         from PIL import Image as PILImage
         from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips, CompositeAudioClip
 
-        images = sorted(input["images"], key=lambda x: x["scene_id"])
-        narration = sorted(input["narration"], key=lambda x: x["scene_id"])
-        music_data = input["music"]
-        srt_path = input["subtitles"]["srt_path"]
-        output_path = Path(input["output_path"])
+        images = sorted(stage_input["images"], key=lambda x: x["scene_id"])
+        narration = sorted(stage_input["narration"], key=lambda x: x["scene_id"])
+        music_data = stage_input["music"]
+        srt_path = stage_input["subtitles"]["srt_path"]
+        output_path = Path(stage_input["output_path"])
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         TARGET_W, TARGET_H = 1920, 1080
+
+        if len(images) != len(narration):
+            raise ValueError(f"Scene count mismatch: {len(images)} images vs {len(narration)} narration clips")
 
         clips = []
         for img_data, audio_data in zip(images, narration):
@@ -49,11 +51,14 @@ class Stage7Assemble(BaseStage):
         video = video.set_audio(mixed)
 
         temp_path = output_path.with_suffix(".temp.mp4")
-        video.write_videofile(
-            str(temp_path), fps=30, codec="libx264", audio_codec="aac",
-            verbose=False, logger=None,
-        )
-        video.close()
+        try:
+            video.write_videofile(
+                str(temp_path), fps=30, codec="libx264", audio_codec="aac",
+                verbose=False, logger=None,
+            )
+        finally:
+            video.close()
+            music_clip.close()
 
         # Burn subtitles with FFmpeg. On Windows, escape drive colon for FFmpeg filter.
         srt_for_ffmpeg = Path(srt_path).as_posix()
@@ -72,7 +77,7 @@ class Stage7Assemble(BaseStage):
             temp_path.unlink(missing_ok=True)
         except subprocess.CalledProcessError:
             # Subtitle burn failed (common on Windows path edge cases); ship without subtitles
-            temp_path.rename(output_path)
+            shutil.move(str(temp_path), str(output_path))
 
         size = output_path.stat().st_size
         probe = subprocess.run(
@@ -80,5 +85,8 @@ class Stage7Assemble(BaseStage):
              "-of", "default=noprint_wrappers=1:nokey=1", str(output_path)],
             capture_output=True, text=True, check=True,
         )
-        duration_s = float(probe.stdout.strip())
+        raw = probe.stdout.strip()
+        if not raw:
+            raise RuntimeError(f"ffprobe returned no duration for {output_path}")
+        duration_s = float(raw)
         return {"path": str(output_path), "duration_s": duration_s, "file_size_bytes": size}
