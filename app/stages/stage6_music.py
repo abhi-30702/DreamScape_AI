@@ -5,7 +5,7 @@ from pathlib import Path
 from app.stages.base import BaseStage
 from app.config import MUSICGEN_MODEL
 
-_SAMPLE_RATE = 44100
+_STUB_STUB_SAMPLE_RATE = 44100  # used only by _silence_wav_stereo (stub path)
 _MUSIC_MODEL = None  # module-level lazy singleton
 _MUSIC_LOCK = threading.Lock()
 
@@ -56,11 +56,11 @@ def _generate_and_save(model, music_condition: str, duration_s: float, out_path:
 
 
 def _silence_wav_stereo(path: Path, duration_s: float):
-    n = int(duration_s * _SAMPLE_RATE)
+    n = int(duration_s * _STUB_SAMPLE_RATE)
     with wave.open(str(path), "w") as f:
         f.setnchannels(2)
         f.setsampwidth(2)
-        f.setframerate(_SAMPLE_RATE)
+        f.setframerate(_STUB_SAMPLE_RATE)
         f.writeframes(b"\x00\x00\x00\x00" * n)
 
 

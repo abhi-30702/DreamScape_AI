@@ -1,15 +1,19 @@
+import threading
 from pathlib import Path
 from app.stages.base import BaseStage
 from app.config import WHISPER_MODEL_SIZE
 
 _MODEL = None  # module-level lazy singleton
+_MODEL_LOCK = threading.Lock()
 
 
 def _get_model():
     global _MODEL
     if _MODEL is None:
-        import whisper
-        _MODEL = whisper.load_model(WHISPER_MODEL_SIZE)
+        with _MODEL_LOCK:
+            if _MODEL is None:
+                import whisper
+                _MODEL = whisper.load_model(WHISPER_MODEL_SIZE)
     return _MODEL
 
 
