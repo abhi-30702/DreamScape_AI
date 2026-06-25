@@ -102,17 +102,22 @@ class Cache:
         return json.loads(row[0])
 
     def prune_expired(self, ttl_hours: int = 24):
-        cutoff = (datetime.utcnow() - timedelta(hours=ttl_hours)).isoformat()
+        from datetime import timezone
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=ttl_hours)).strftime("%Y-%m-%d %H:%M:%S")
         with self._conn() as conn:
             old = conn.execute(
                 "SELECT run_id FROM pipeline_runs WHERE created_at < ?", (cutoff,)
             ).fetchall()
-            for (run_id,) in old:
-                conn.execute("DELETE FROM stage_outputs WHERE run_id=?", (run_id,))
-                conn.execute("DELETE FROM pipeline_runs WHERE run_id=?", (run_id,))
-                run_dir = self.asset_dir / run_id
-                if run_dir.exists():
-                    shutil.rmtree(run_dir)
+            old_ids = [row[0] for row in old]
+            if old_ids:
+                placeholders = ",".join("?" * len(old_ids))
+                conn.execute(f"DELETE FROM stage_outputs WHERE run_id IN ({placeholders})", old_ids)
+                conn.execute(f"DELETE FROM pipeline_runs WHERE run_id IN ({placeholders})", old_ids)
+        # Filesystem cleanup after DB commit
+        for run_id in old_ids:
+            run_dir = self.asset_dir / run_id
+            if run_dir.exists():
+                shutil.rmtree(run_dir)
 
 
 def prompt_hash(prompt: str, params: dict) -> str:
