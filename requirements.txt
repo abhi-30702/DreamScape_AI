@@ -9,3 +9,10 @@ gradio>=4.30.0
 httpx>=0.27.0
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
+openai-whisper>=20231117
+TTS>=0.22.0
+audiocraft
+diffusers>=0.27.0
+transformers>=4.38.0
+accelerate>=0.28.0
+sentencepiece
