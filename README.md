@@ -171,6 +171,14 @@ This project is developed as a final-year research dissertation. The four contri
 
 ---
 
+## Contributors
+
+| Name | GitHub | Role |
+|---|---|---|
+| Abhishek | [@abhi-30702](https://github.com/abhi-30702) | Author & Researcher |
+
+---
+
 ## License
 
 MIT
