@@ -1,0 +1,12 @@
+cache/
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+dist/
+.venv/
+venv/
+*.mp4
+*.wav
+*.png
+.pytest_cache/
