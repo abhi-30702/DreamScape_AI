@@ -80,13 +80,16 @@ class Stage7Assemble(BaseStage):
             shutil.move(str(temp_path), str(output_path))
 
         size = output_path.stat().st_size
-        probe = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "default=noprint_wrappers=1:nokey=1", str(output_path)],
-            capture_output=True, text=True, check=True,
-        )
-        raw = probe.stdout.strip()
-        if not raw:
-            raise RuntimeError(f"ffprobe returned no duration for {output_path}")
-        duration_s = float(raw)
+        try:
+            probe = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=noprint_wrappers=1:nokey=1", str(output_path)],
+                capture_output=True, text=True, check=True,
+            )
+            raw = probe.stdout.strip()
+            if not raw:
+                raise RuntimeError(f"ffprobe returned no duration for {output_path}")
+            duration_s = float(raw)
+        except FileNotFoundError:
+            raise RuntimeError("ffprobe not found on PATH — install FFmpeg and add it to PATH")
         return {"path": str(output_path), "duration_s": duration_s, "file_size_bytes": size}

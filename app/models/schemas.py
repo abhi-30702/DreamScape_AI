@@ -88,7 +88,7 @@ class PipelineRun(BaseModel):
     subtitle_output: Optional[SubtitleOutput] = None
     music_output: Optional[MusicOutput] = None
     video_output: Optional[VideoOutput] = None
-    created_at: datetime = None
+    created_at: Optional[datetime] = None
     status: Literal["pending", "running", "complete", "failed"] = "pending"
 
     def model_post_init(self, __context: object) -> None:
