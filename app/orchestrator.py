@@ -1,4 +1,3 @@
-from pathlib import Path
 from app.cache import Cache, prompt_hash
 from app.models.schemas import (
     PipelineRun, SpeakerSettings,
@@ -72,17 +71,22 @@ class Orchestrator:
                                    self.cache.load_stage_output(run_id, stage.stage_num))
 
         # Run any incomplete stages
-        run.status = "running"
-        for stage in self.stages:
-            if not self.cache.stage_complete(run_id, stage.stage_num):
-                output = stage.run(self._build_input(run, stage.stage_num))
-                self.cache.save_stage_output(run_id, stage.stage_num, output)
-                self._apply_output(run, stage.stage_num, output)
-
-        run.status = "complete"
+        try:
+            run.status = "running"
+            for stage in self.stages:
+                if not self.cache.stage_complete(run_id, stage.stage_num):
+                    output = stage.run(self._build_input(run, stage.stage_num))
+                    self.cache.save_stage_output(run_id, stage.stage_num, output)
+                    self._apply_output(run, stage.stage_num, output)
+            run.status = "complete"
+        except Exception:
+            run.status = "failed"
+            raise
         return run
 
     def run_stage(self, run_id: str, stage_num: int) -> PipelineRun:
+        if stage_num not in range(1, 8):
+            raise ValueError(f"stage_num must be 1–7, got {stage_num}")
         self.cache.invalidate_from(run_id, stage_num)
         params = self.cache.load_run_params(run_id)
         return self.run_pipeline(
@@ -117,6 +121,7 @@ class Orchestrator:
                     "music": run.music_output.model_dump(),
                     "subtitles": run.subtitle_output.model_dump(),
                     "output_path": str(self.cache.get_asset_dir(run.run_id, 7) / "output.mp4")}
+        raise ValueError(f"Unknown stage_num: {stage_num}")
 
     def _apply_output(self, run: PipelineRun, stage_num: int, output: dict):
         attr, model_cls = _SCHEMA_MAP[stage_num]
@@ -130,7 +135,7 @@ class Orchestrator:
             scene_by_id[audio.scene_id].duration_estimate_s = audio.duration_s + 1.0
         total = run.narration_output.total_duration_s
         target = run.duration_target_s
-        if abs(total - target) > 2:
+        if total > 0 and abs(total - target) > 2:
             ratio = target / total
             for scene in run.scene_plan.scenes:
                 scene.duration_estimate_s = round(scene.duration_estimate_s * ratio, 2)
