@@ -78,3 +78,30 @@ def test_stage2_real_caps_at_8_scenes(tmp_path):
         stage = Stage2Expand(cache_dir=tmp_path, stub_stages=set())
         result = stage.run({"parsed_prompt": _parsed_prompt()})
     assert len(result["scenes"]) == 8
+
+
+import json as _json
+from unittest.mock import patch as _patch
+from app.stages.stage2_expand import Stage2Expand as _Stage2Expand
+
+
+def test_stage2_real_routes_via_hf_backend(monkeypatch, tmp_path):
+    monkeypatch.setenv("DREAMSCAPE_LLM_BACKEND", "hf")
+    monkeypatch.setenv("HF_TOKEN", "hf_test")
+    scenes = [
+        {"id": i, "description": f"desc {i}", "narration_text": f"narr {i}",
+         "mood": "neutral", "duration_estimate_s": 15.0}
+        for i in range(4)
+    ]
+    with _patch("huggingface_hub.InferenceClient") as mock_cls:
+        mock_cls.return_value.text_generation.return_value = _json.dumps({"scenes": scenes})
+        stage = _Stage2Expand(cache_dir=tmp_path, stub_stages=set())
+        result = stage.run({"parsed_prompt": {
+            "sentiment": "neutral",
+            "style": "cinematic",
+            "key_entities": ["knight"],
+            "prompt": "A knight rides",
+            "duration_target_s": 60,
+        }})
+    assert len(result["scenes"]) == 4
+    assert mock_cls.return_value.text_generation.called

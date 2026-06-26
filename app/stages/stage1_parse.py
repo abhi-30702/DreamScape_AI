@@ -1,6 +1,6 @@
 from app.stages.base import BaseStage
 from app.config import OLLAMA_BASE_URL, OLLAMA_MODEL
-from app.stages._ollama import ollama_generate
+from app.stages._llm import llm_generate
 
 _SAD = {"sad", "lonely", "lost", "dark", "grief", "sorrow", "alone", "death", "cry", "melanchol", "despair"}
 _HAPPY = {"happy", "joyful", "bright", "celebrat", "wonderful", "cheer", "laugh", "love", "hope", "delight"}
@@ -31,7 +31,7 @@ class Stage1Parse(BaseStage):
             duration=input.get("duration", 60),
             style=input.get("style", "cinematic"),
         )
-        result = ollama_generate(OLLAMA_BASE_URL, OLLAMA_MODEL, prompt_text)
+        result = llm_generate(OLLAMA_BASE_URL, OLLAMA_MODEL, prompt_text)
         sentiment = result.get("sentiment", "neutral")
         if sentiment not in ("happy", "neutral", "sad"):
             sentiment = "neutral"

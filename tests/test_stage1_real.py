@@ -69,3 +69,31 @@ def test_stage1_real_fills_entities_when_llm_returns_empty(tmp_path):
         result = stage.run({"prompt": "A wolf howls at the moon", "duration": 60, "style": "cinematic", "voice": "female"})
     assert len(result["key_entities"]) >= 1
     assert all(isinstance(e, str) for e in result["key_entities"])
+
+
+import json as _json
+from unittest.mock import patch as _patch
+from app.stages.stage1_parse import Stage1Parse as _Stage1Parse
+
+
+def test_stage1_real_routes_via_hf_backend(monkeypatch, tmp_path):
+    monkeypatch.setenv("DREAMSCAPE_LLM_BACKEND", "hf")
+    monkeypatch.setenv("HF_TOKEN", "hf_test")
+    response = {
+        "sentiment": "happy",
+        "key_entities": ["warrior"],
+        "style": "cinematic",
+        "prompt": "A warrior stands tall",
+        "duration_target_s": 60,
+    }
+    with _patch("huggingface_hub.InferenceClient") as mock_cls:
+        mock_cls.return_value.text_generation.return_value = _json.dumps(response)
+        stage = _Stage1Parse(cache_dir=tmp_path, stub_stages=set())
+        result = stage.run({
+            "prompt": "A warrior stands tall",
+            "duration": 60,
+            "style": "cinematic",
+            "voice": "female",
+        })
+    assert result["sentiment"] == "happy"
+    assert mock_cls.return_value.text_generation.called

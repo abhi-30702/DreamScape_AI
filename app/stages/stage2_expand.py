@@ -1,6 +1,6 @@
 from app.stages.base import BaseStage
 from app.config import OLLAMA_BASE_URL, OLLAMA_MODEL
-from app.stages._ollama import ollama_generate
+from app.stages._llm import llm_generate
 
 _BEATS = [
     ("Wide establishing shot", "The world holds its breath..."),
@@ -61,7 +61,7 @@ class Stage2Expand(BaseStage):
             n_scenes=n_scenes,
             per_scene_dur=per_scene_dur,
         )
-        result = ollama_generate(OLLAMA_BASE_URL, OLLAMA_MODEL, prompt_text, timeout=180.0)
+        result = llm_generate(OLLAMA_BASE_URL, OLLAMA_MODEL, prompt_text, timeout=180.0)
         raw_scenes = result.get("scenes", [])
 
         if not isinstance(raw_scenes, list) or len(raw_scenes) < 4:
