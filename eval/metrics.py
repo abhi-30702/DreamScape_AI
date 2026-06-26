@@ -15,6 +15,11 @@ from app.models.schemas import (
     VisualOutput,
 )
 
+_clip_model = None
+_clip_preprocess = None
+_clip_tokenizer = None
+_whisper_model = None
+
 
 def compute_wer(hypotheses: list[str], references: list[str]) -> dict:
     per_scene = [jiwer.wer(ref, hyp) for ref, hyp in zip(references, hypotheses)]
@@ -27,17 +32,19 @@ def compute_clip_score(image_paths: list[str], texts: list[str]) -> dict:
     import torch
     from PIL import Image
 
-    model, _, preprocess = open_clip.create_model_and_transforms("ViT-B-32", pretrained="openai")
-    tokenizer = open_clip.get_tokenizer("ViT-B-32")
-    model.eval()
+    global _clip_model, _clip_preprocess, _clip_tokenizer
+    if _clip_model is None:
+        _clip_model, _, _clip_preprocess = open_clip.create_model_and_transforms("ViT-B-32", pretrained="openai")
+        _clip_tokenizer = open_clip.get_tokenizer("ViT-B-32")
+        _clip_model.eval()
 
     scores = []
     with torch.no_grad():
         for path, text in zip(image_paths, texts):
-            image = preprocess(Image.open(path)).unsqueeze(0)
-            tokens = tokenizer([text])
-            image_feats = model.encode_image(image)
-            text_feats = model.encode_text(tokens)
+            image = _clip_preprocess(Image.open(path)).unsqueeze(0)
+            tokens = _clip_tokenizer([text])
+            image_feats = _clip_model.encode_image(image)
+            text_feats = _clip_model.encode_text(tokens)
             image_feats = image_feats / image_feats.norm(dim=-1, keepdim=True)
             text_feats = text_feats / text_feats.norm(dim=-1, keepdim=True)
             score = float((image_feats @ text_feats.T).squeeze())
@@ -61,8 +68,10 @@ def compute_sync_error(video_path: str, srt_entries: list) -> dict:
         with VideoFileClip(video_path) as clip:
             clip.audio.write_audiofile(tmp_audio, logger=None)
 
-        model = whisper.load_model("base")
-        result = whisper.transcribe(model, tmp_audio, word_timestamps=True)
+        global _whisper_model
+        if _whisper_model is None:
+            _whisper_model = whisper.load_model("base")
+        result = whisper.transcribe(_whisper_model, tmp_audio, word_timestamps=True)
 
         words = [
             w
@@ -71,10 +80,11 @@ def compute_sync_error(video_path: str, srt_entries: list) -> dict:
         ]
 
         errors_ms = []
-        for i, entry in enumerate(srt_entries):
-            if i >= len(words):
+        for entry in srt_entries:
+            if not words:
                 break
-            error_ms = abs(words[i]["start"] - entry.start_s) * 1000
+            closest_word = min(words, key=lambda w: abs(w["start"] - entry.start_s))
+            error_ms = abs(closest_word["start"] - entry.start_s) * 1000
             errors_ms.append(error_ms)
 
         if not errors_ms:
@@ -95,6 +105,11 @@ def compute_sync_error(video_path: str, srt_entries: list) -> dict:
 
 def _load_run(cache: Cache, run_id: str) -> PipelineRun:
     params = cache.load_run_params(run_id)
+    try:
+        cache.load_stage_output(run_id, 7)
+        status = "complete"
+    except KeyError:
+        status = "running"
     data: dict = {
         "run_id": run_id,
         "prompt_hash": "",
@@ -102,7 +117,7 @@ def _load_run(cache: Cache, run_id: str) -> PipelineRun:
         "duration_target_s": int(params.get("duration", 60)),
         "style": params.get("style", "cinematic"),
         "voice": params.get("voice", "female"),
-        "status": "complete",
+        "status": status,
     }
     stage_fields = {
         1: "parsed_prompt",

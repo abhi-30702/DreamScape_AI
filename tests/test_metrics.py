@@ -2,6 +2,16 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 
+@pytest.fixture(autouse=True)
+def reset_model_caches():
+    import eval.metrics
+    eval.metrics._clip_model = None
+    eval.metrics._clip_preprocess = None
+    eval.metrics._clip_tokenizer = None
+    eval.metrics._whisper_model = None
+    yield
+
+
 def test_wer_perfect_match():
     from eval.metrics import compute_wer
     result = compute_wer(["hello world"], ["hello world"])
