@@ -120,3 +120,110 @@ def test_sync_error_exceeds_threshold():
 
     assert result["pass"] is False
     assert result["max"] >= 200.0
+
+
+import json
+import sqlite3
+from pathlib import Path
+
+from app.cache import Cache
+from app.models.schemas import PipelineRun
+
+
+def test_load_run_assembles_pipeline_run(tmp_path):
+    from eval.metrics import _load_run
+
+    mock_cache = MagicMock()
+    mock_cache.load_run_params.return_value = {
+        "prompt": "A warrior stands tall",
+        "duration": 60,
+        "style": "cinematic",
+        "voice": "female",
+    }
+
+    def stage_side_effect(run_id, stage_num):
+        data = {
+            1: {
+                "prompt": "A warrior stands tall",
+                "sentiment": "happy",
+                "duration_target_s": 60,
+                "style": "cinematic",
+                "key_entities": ["warrior"],
+            },
+            2: {
+                "scenes": [{
+                    "id": 0,
+                    "description": "A warrior",
+                    "narration_text": "A warrior stands tall",
+                    "mood": "happy",
+                    "duration_estimate_s": 15.0,
+                }]
+            },
+        }
+        if stage_num in data:
+            return data[stage_num]
+        raise KeyError(stage_num)
+
+    mock_cache.load_stage_output.side_effect = stage_side_effect
+
+    run = _load_run(mock_cache, "abc123")
+
+    assert run.run_id == "abc123"
+    assert run.prompt == "A warrior stands tall"
+    assert run.parsed_prompt.sentiment == "happy"
+    assert run.scene_plan.scenes[0].narration_text == "A warrior stands tall"
+    assert run.video_output is None
+
+
+def test_batch_mode_skips_incomplete_runs(tmp_path):
+    from eval.metrics import evaluate_run
+
+    mock_cache = MagicMock()
+    mock_cache.load_run_params.return_value = {
+        "prompt": "test", "duration": 60, "style": "cinematic", "voice": "female"
+    }
+    mock_cache.load_stage_output.side_effect = KeyError("not found")
+
+    out_path = tmp_path / "result.json"
+    result = evaluate_run("run001", out_path, mock_cache)
+
+    assert result["clip_score"] is None
+    assert result["wer"] is None
+    assert result["sync_error_ms"] is None
+    assert out_path.exists()
+
+
+def test_list_complete_run_ids(tmp_path):
+    from eval.metrics import _list_complete_run_ids
+
+    cache = Cache(db_path=tmp_path / "runs.db", asset_dir=tmp_path / "assets")
+    run_id = cache.create_run("hash1", {"prompt": "test", "duration": 60, "style": "cinematic", "voice": "female"})
+    cache.save_stage_output(run_id, 7, {"path": "/fake.mp4", "duration_s": 60.0, "file_size_bytes": 1000})
+
+    run_id2 = cache.create_run("hash2", {"prompt": "test2", "duration": 60, "style": "cinematic", "voice": "female"})
+
+    ids = _list_complete_run_ids(cache)
+
+    assert run_id in ids
+    assert run_id2 not in ids
+
+
+def test_json_output_written_to_eval_results(tmp_path):
+    from eval.metrics import evaluate_run
+
+    mock_cache = MagicMock()
+    mock_cache.load_run_params.return_value = {
+        "prompt": "a test prompt", "duration": 60, "style": "cinematic", "voice": "female"
+    }
+    mock_cache.load_stage_output.side_effect = KeyError("not found")
+
+    out_path = tmp_path / "run001.json"
+    evaluate_run("run001", out_path, mock_cache)
+
+    written = json.loads(out_path.read_text())
+    assert written["run_id"] == "run001"
+    assert written["prompt"] == "a test prompt"
+    assert "computed_at" in written
+    assert "clip_score" in written
+    assert "wer" in written
+    assert "sync_error_ms" in written
