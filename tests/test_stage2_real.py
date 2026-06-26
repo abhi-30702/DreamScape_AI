@@ -80,11 +80,6 @@ def test_stage2_real_caps_at_8_scenes(tmp_path):
     assert len(result["scenes"]) == 8
 
 
-import json as _json
-from unittest.mock import patch as _patch
-from app.stages.stage2_expand import Stage2Expand as _Stage2Expand
-
-
 def test_stage2_real_routes_via_hf_backend(monkeypatch, tmp_path):
     monkeypatch.setenv("DREAMSCAPE_LLM_BACKEND", "hf")
     monkeypatch.setenv("HF_TOKEN", "hf_test")
@@ -93,9 +88,10 @@ def test_stage2_real_routes_via_hf_backend(monkeypatch, tmp_path):
          "mood": "neutral", "duration_estimate_s": 15.0}
         for i in range(4)
     ]
-    with _patch("huggingface_hub.InferenceClient") as mock_cls:
-        mock_cls.return_value.text_generation.return_value = _json.dumps({"scenes": scenes})
-        stage = _Stage2Expand(cache_dir=tmp_path, stub_stages=set())
+    # InferenceClient is imported lazily inside hf_generate(), so patch at the source module
+    with patch("huggingface_hub.InferenceClient") as mock_cls:
+        mock_cls.return_value.text_generation.return_value = json.dumps({"scenes": scenes})
+        stage = Stage2Expand(cache_dir=tmp_path, stub_stages=set())
         result = stage.run({"parsed_prompt": {
             "sentiment": "neutral",
             "style": "cinematic",
@@ -104,4 +100,4 @@ def test_stage2_real_routes_via_hf_backend(monkeypatch, tmp_path):
             "duration_target_s": 60,
         }})
     assert len(result["scenes"]) == 4
-    assert mock_cls.return_value.text_generation.called
+    mock_cls.return_value.text_generation.assert_called_once()
