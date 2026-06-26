@@ -119,6 +119,8 @@ All settings are read from `.env` (see `.env.example`):
 | `DREAMSCAPE_MUSICGEN_MODEL` | `facebook/musicgen-medium` | MusicGen HuggingFace model ID |
 | `DREAMSCAPE_CACHE_DIR` | `cache` | Directory for SQLite DB and asset files |
 | `DREAMSCAPE_CACHE_TTL_HOURS` | `24` | How long completed runs are cached |
+| `DREAMSCAPE_LLM_BACKEND` | `ollama` | LLM routing: `ollama` for local dev, `hf` for HF Spaces |
+| `HF_TOKEN` | _(none)_ | HF access token — required when `DREAMSCAPE_LLM_BACKEND=hf` |
 | `DREAMSCAPE_DEFAULT_VOICE` | `female` | Default TTS voice (`female`, `male`) |
 
 ---

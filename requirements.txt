@@ -14,5 +14,6 @@ TTS>=0.22.0
 audiocraft
 diffusers>=0.27.0
 transformers>=4.38.0
+huggingface_hub>=0.22.0
 accelerate>=0.28.0
 sentencepiece
