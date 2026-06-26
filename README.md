@@ -1,3 +1,14 @@
+---
+title: DreamScapeAI
+emoji: 🎬
+colorFrom: purple
+colorTo: blue
+sdk: gradio
+sdk_version: "4.30.0"
+app_file: app.py
+pinned: false
+---
+
 # DreamScapeAI
 
 Transform a single text prompt into a cinematic short video (30–90s MP4) with AI-generated visuals, narration, subtitles, and emotion-aware background music — running entirely on local models.
