@@ -1,3 +1,1 @@
-from ui.gradio_app import build_ui
 
-demo = build_ui()
