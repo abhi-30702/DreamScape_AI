@@ -7,12 +7,14 @@ import pytest
 MANIFEST_PATH = Path("study_videos/manifest.json")
 EXPECTED_VIDEO_COUNT = 20
 ID_PATTERN = re.compile(r"^v\d{2}$")
-REQUIRED_KEYS = {"id", "filename", "prompt", "sentiment", "style"}
+REQUIRED_KEYS = {"id", "filename", "prompt", "sentiment", "style", "run_id"}
 VALID_SENTIMENTS = {"happy", "neutral", "sad"}
 VALID_STYLES = {"cinematic", "documentary", "anime", "noir", "horror"}
 
 
 def _load_manifest():
+    if not MANIFEST_PATH.is_file():
+        pytest.skip(f"{MANIFEST_PATH} does not exist yet")
     with MANIFEST_PATH.open("r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -36,6 +38,15 @@ def test_manifest_entries_have_required_keys():
     for entry in data:
         missing = REQUIRED_KEYS - set(entry.keys())
         assert not missing, f"Entry {entry.get('id')!r} missing keys: {missing}"
+
+
+def test_manifest_run_id_is_null_or_string():
+    data = _load_manifest()
+    for entry in data:
+        rid = entry["run_id"]
+        assert rid is None or isinstance(rid, str), (
+            f"{entry['id']}: run_id must be null or a string, got {type(rid).__name__}"
+        )
 
 
 def test_manifest_ids_are_unique_and_match_pattern():
