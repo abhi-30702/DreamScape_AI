@@ -150,3 +150,163 @@ def test_build_overall_payload_shape():
     assert payload["overall_comment"] == "Solid run."
     assert payload["app_version"] == rater_study.APP_VERSION
     datetime.fromisoformat(payload["submitted_at_utc"].replace("Z", "+00:00"))
+
+
+# ----- on_start -----
+
+def _fake_manifest_20():
+    return _fake_manifest(20)
+
+
+def test_on_start_with_valid_inputs_returns_rating_state(monkeypatch):
+    monkeypatch.setattr(
+        "ui.rater_storage.list_completed", lambda rid: set()
+    )
+    monkeypatch.setattr(
+        "ui.rater_storage.has_completed_overall", lambda rid: False
+    )
+    result = rater_study.on_start("reviewer_a", True, _fake_manifest_20())
+    assert result["ok"] is True
+    assert result["state"]["status"] == "rating"
+    assert result["state"]["current_index"] == 0
+    assert result["error"] is None
+
+
+def test_on_start_resumes_at_first_unrated(monkeypatch):
+    monkeypatch.setattr(
+        "ui.rater_storage.list_completed", lambda rid: {"v01", "v02"}
+    )
+    monkeypatch.setattr(
+        "ui.rater_storage.has_completed_overall", lambda rid: False
+    )
+    result = rater_study.on_start("reviewer_a", True, _fake_manifest_20())
+    assert result["state"]["current_index"] == 2
+    assert result["state"]["status"] == "rating"
+
+
+def test_on_start_with_already_completed_rater_jumps_to_done(monkeypatch):
+    monkeypatch.setattr(
+        "ui.rater_storage.list_completed",
+        lambda rid: {f"v{i:02d}" for i in range(1, 21)},
+    )
+    monkeypatch.setattr(
+        "ui.rater_storage.has_completed_overall", lambda rid: True
+    )
+    result = rater_study.on_start("reviewer_a", True, _fake_manifest_20())
+    assert result["state"]["status"] == "all_done"
+
+
+def test_on_start_with_invalid_id_returns_error(monkeypatch):
+    # Even if storage would say "new rater", we never call it for invalid input.
+    called = {"n": 0}
+    def _list(rid):
+        called["n"] += 1
+        return set()
+    monkeypatch.setattr("ui.rater_storage.list_completed", _list)
+    result = rater_study.on_start("a!", True, _fake_manifest_20())
+    assert result["ok"] is False
+    assert result["error"] is not None
+    assert result["state"] is None
+    assert called["n"] == 0
+
+
+def test_on_start_with_no_consent_returns_error(monkeypatch):
+    called = {"n": 0}
+    def _list(rid):
+        called["n"] += 1
+        return set()
+    monkeypatch.setattr("ui.rater_storage.list_completed", _list)
+    result = rater_study.on_start("reviewer_a", False, _fake_manifest_20())
+    assert result["ok"] is False
+    assert "consent" in result["error"].lower()
+    assert called["n"] == 0
+
+
+# ----- on_submit -----
+
+def test_on_submit_saves_and_advances_state(monkeypatch):
+    saved = []
+    monkeypatch.setattr(
+        "ui.rater_storage.save_response",
+        lambda rid, vid, payload: saved.append((rid, vid, payload)),
+    )
+    manifest = _fake_manifest_20()
+    state = {"rater_id": "reviewer_a", "current_index": 0, "total": 20, "status": "rating"}
+    ratings = {k: 4 for k, _, _ in rater_study.DIMENSIONS}
+    result = rater_study.on_submit(state, ratings, "Nice", manifest)
+    assert result["ok"] is True
+    assert result["state"]["current_index"] == 1
+    assert result["state"]["status"] == "rating"
+    assert len(saved) == 1
+    rid, vid, payload = saved[0]
+    assert rid == "reviewer_a"
+    assert vid == "v01"
+    assert payload["ratings"] == ratings
+    assert payload["comment"] == "Nice"
+
+
+def test_on_submit_on_last_video_transitions_to_overall_pending(monkeypatch):
+    monkeypatch.setattr("ui.rater_storage.save_response", lambda *a, **k: None)
+    manifest = _fake_manifest_20()
+    state = {"rater_id": "reviewer_a", "current_index": 19, "total": 20, "status": "rating"}
+    ratings = {k: 3 for k, _, _ in rater_study.DIMENSIONS}
+    result = rater_study.on_submit(state, ratings, "", manifest)
+    assert result["state"]["status"] == "overall_pending"
+    assert result["state"]["current_index"] == 20
+
+
+def test_on_submit_when_storage_raises_does_not_advance(monkeypatch):
+    def _raise(*a, **k):
+        raise RuntimeError("network down")
+    monkeypatch.setattr("ui.rater_storage.save_response", _raise)
+    manifest = _fake_manifest_20()
+    state = {"rater_id": "reviewer_a", "current_index": 5, "total": 20, "status": "rating"}
+    ratings = {k: 4 for k, _, _ in rater_study.DIMENSIONS}
+    result = rater_study.on_submit(state, ratings, "", manifest)
+    assert result["ok"] is False
+    assert result["state"]["current_index"] == 5  # unchanged
+    assert "could not save" in result["error"].lower()
+
+
+def test_on_submit_validates_all_ratings_present(monkeypatch):
+    called = {"n": 0}
+    def _save(*a, **k):
+        called["n"] += 1
+    monkeypatch.setattr("ui.rater_storage.save_response", _save)
+    manifest = _fake_manifest_20()
+    state = {"rater_id": "reviewer_a", "current_index": 0, "total": 20, "status": "rating"}
+    ratings = {k: 4 for k, _, _ in rater_study.DIMENSIONS}
+    ratings["visual_quality"] = None  # one missing
+    result = rater_study.on_submit(state, ratings, "", manifest)
+    assert result["ok"] is False
+    assert called["n"] == 0
+
+
+# ----- on_overall_submit -----
+
+def test_on_overall_submit_saves_and_marks_done(monkeypatch):
+    saved = []
+    monkeypatch.setattr(
+        "ui.rater_storage.save_response",
+        lambda rid, vid, payload: saved.append((rid, vid, payload)),
+    )
+    state = {"rater_id": "reviewer_a", "current_index": 20, "total": 20, "status": "overall_pending"}
+    result = rater_study.on_overall_submit(state, "Great experience.")
+    assert result["ok"] is True
+    assert result["state"]["status"] == "all_done"
+    assert len(saved) == 1
+    rid, vid, payload = saved[0]
+    assert rid == "reviewer_a"
+    assert vid == "_overall"
+    assert payload["overall_comment"] == "Great experience."
+
+
+def test_on_overall_submit_when_storage_raises_keeps_pending(monkeypatch):
+    monkeypatch.setattr(
+        "ui.rater_storage.save_response",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    state = {"rater_id": "reviewer_a", "current_index": 20, "total": 20, "status": "overall_pending"}
+    result = rater_study.on_overall_submit(state, "")
+    assert result["ok"] is False
+    assert result["state"]["status"] == "overall_pending"

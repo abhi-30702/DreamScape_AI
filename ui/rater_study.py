@@ -98,3 +98,75 @@ def build_overall_payload(rater_id: str, comment: str) -> dict:
         "submitted_at_utc": _now_utc_iso(),
         "app_version": APP_VERSION,
     }
+
+
+from ui import rater_storage
+
+
+def on_start(rater_id: str, consent: bool, manifest: list[dict]) -> dict:
+    """Handle the Start click. Returns {ok, error, state}."""
+    check = validate_start(rater_id, consent)
+    if not check["ok"]:
+        return {"ok": False, "error": check["error"], "state": None}
+    try:
+        completed = rater_storage.list_completed(rater_id)
+        has_overall = rater_storage.has_completed_overall(rater_id)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": f"Could not load your progress: {exc}",
+            "state": None,
+        }
+    state = compute_start_state(rater_id, completed, has_overall, manifest)
+    return {"ok": True, "error": None, "state": state}
+
+
+def _all_ratings_present(ratings: dict) -> bool:
+    keys = {k for k, _, _ in DIMENSIONS}
+    return all(ratings.get(k) is not None for k in keys)
+
+
+def on_submit(state: dict, ratings: dict, comment: str, manifest: list[dict]) -> dict:
+    """Handle the Submit & next click. Returns {ok, error, state}."""
+    if not _all_ratings_present(ratings):
+        return {
+            "ok": False,
+            "error": "Please rate every dimension before submitting.",
+            "state": state,
+        }
+    idx = state["current_index"]
+    entry = manifest[idx]
+    payload = build_submission_payload(
+        rater_id=state["rater_id"],
+        manifest_entry=entry,
+        order_index=idx,
+        ratings=ratings,
+        comment=comment,
+    )
+    try:
+        rater_storage.save_response(state["rater_id"], entry["id"], payload)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": f"Could not save your rating — please try again. ({exc})",
+            "state": state,  # unchanged
+        }
+    next_idx = idx + 1
+    next_status = "overall_pending" if next_idx >= state["total"] else "rating"
+    new_state = {**state, "current_index": next_idx, "status": next_status}
+    return {"ok": True, "error": None, "state": new_state}
+
+
+def on_overall_submit(state: dict, overall_comment: str) -> dict:
+    """Handle the final overall-comment submit. Returns {ok, error, state}."""
+    payload = build_overall_payload(state["rater_id"], overall_comment)
+    try:
+        rater_storage.save_response(state["rater_id"], "_overall", payload)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": f"Could not save your final comment — please try again. ({exc})",
+            "state": state,
+        }
+    new_state = {**state, "status": "all_done"}
+    return {"ok": True, "error": None, "state": new_state}
