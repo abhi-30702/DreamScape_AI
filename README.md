@@ -184,6 +184,42 @@ This project is developed as a final-year research dissertation. The four contri
 
 ---
 
+## Rater Study (Evaluation Framework Phase 2)
+
+The deployed Gradio app exposes a second tab, **"Rate videos"**, used to collect
+human ratings for the thesis evaluation. Each rater watches up to 20 short
+videos and rates each on six 5-point Likert dimensions; responses are written
+to a private HF Dataset repo as one JSON file per submission.
+
+### One-time setup
+
+1. Create a private dataset repo on https://huggingface.co/new-dataset
+   (e.g. `your-username/dreamscape-rater-study`).
+2. In the Space's **Settings → Variables and secrets**, add:
+   - `DREAMSCAPE_RATER_DATASET` = `your-username/dreamscape-rater-study`
+   - `HF_TOKEN` = a token with **write** scope on that dataset repo.
+3. Generate the 20 study videos locally on a GPU runner and commit the MP4s
+   into `study_videos/` via Git LFS:
+   ```
+   git lfs install
+   git add study_videos/v01.mp4 ... study_videos/v20.mp4
+   git commit -m "chore(study): add 20 rater-study videos"
+   git push
+   ```
+
+### Data collection layout
+
+- Each rater submission: `responses/<rater_id>/<video_id>.json`
+- Each rater's final overall comment: `responses/<rater_id>/_overall.json`
+
+Pull the dataset locally for analysis in Phase 3:
+
+```
+huggingface-cli download --repo-type dataset your-username/dreamscape-rater-study --local-dir responses_dump
+```
+
+---
+
 ## Contributors
 
 | Name | GitHub | Role |
