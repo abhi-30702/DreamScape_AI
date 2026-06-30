@@ -3,6 +3,8 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ui import rater_storage
+
 APP_VERSION = "0.2.0"
 
 DIMENSIONS = [
@@ -98,9 +100,6 @@ def build_overall_payload(rater_id: str, comment: str) -> dict:
         "submitted_at_utc": _now_utc_iso(),
         "app_version": APP_VERSION,
     }
-
-
-from ui import rater_storage
 
 
 def on_start(rater_id: str, consent: bool, manifest: list[dict]) -> dict:
