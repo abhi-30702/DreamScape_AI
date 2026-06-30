@@ -1,8 +1,12 @@
+import logging
+
 import numpy as np
 import pandas as pd
 from statsmodels.stats.inter_rater import fleiss_kappa
 
 from eval.stats.loader import DIMENSIONS
+
+_log = logging.getLogger(__name__)
 
 RATING_VALUES = [1, 2, 3, 4, 5]
 
@@ -38,6 +42,13 @@ def _per_dimension_kappa(ratings_df: pd.DataFrame, dimension: str, min_raters_pe
 
     totals = [sum(r) for r in matrix_rows]
     modal_total = max(set(totals), key=totals.count)
+    n_dropped = sum(1 for t in totals if t != modal_total)
+    if n_dropped:
+        _log.warning(
+            "kappa dimension=%s: dropped %d video(s) whose rater count differed "
+            "from the modal total (%d); statsmodels.fleiss_kappa requires equal row sums",
+            dimension, n_dropped, modal_total,
+        )
     matrix_rows = [r for r, t in zip(matrix_rows, totals) if t == modal_total]
     if len(matrix_rows) < 2:
         return float("nan"), len(matrix_rows)

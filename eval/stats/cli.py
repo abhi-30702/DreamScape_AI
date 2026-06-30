@@ -57,7 +57,7 @@ def run(args: argparse.Namespace) -> int:
         corr_df = correlations.compute_correlations(per_video, auto_df)
         formatters.write_table(corr_df, args.out, stem="auto_vs_human_correlations")
     else:
-        print("auto metrics not provided; skipping correlations")
+        print("auto metrics not provided; skipping correlations", file=sys.stderr)
 
     formatters.write_provenance(
         args.out,

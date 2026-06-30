@@ -11,6 +11,8 @@ PAIRINGS: list[tuple[str, str, int]] = [
 
 
 def _zscore(series: pd.Series) -> pd.Series:
+    # ddof=0 (population std) for descriptive z-scores; values feed into the composite
+    # signal and are not used for separate inferential claims.
     std = series.std(ddof=0)
     if std == 0 or pd.isna(std):
         return pd.Series([float("nan")] * len(series), index=series.index)
