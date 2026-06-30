@@ -310,3 +310,15 @@ def test_on_overall_submit_when_storage_raises_keeps_pending(monkeypatch):
     result = rater_study.on_overall_submit(state, "")
     assert result["ok"] is False
     assert result["state"]["status"] == "overall_pending"
+
+
+def test_on_overall_submit_is_noop_when_already_all_done(monkeypatch):
+    called = {"n": 0}
+    def _save(*a, **k):
+        called["n"] += 1
+    monkeypatch.setattr("ui.rater_storage.save_response", _save)
+    state = {"rater_id": "reviewer_a", "current_index": 20, "total": 20, "status": "all_done"}
+    result = rater_study.on_overall_submit(state, "second comment")
+    assert result["ok"] is True
+    assert result["state"]["status"] == "all_done"
+    assert called["n"] == 0  # must not write a duplicate _overall.json

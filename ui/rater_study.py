@@ -160,6 +160,8 @@ def on_submit(state: dict, ratings: dict, comment: str, manifest: list[dict]) ->
 
 def on_overall_submit(state: dict, overall_comment: str) -> dict:
     """Handle the final overall-comment submit. Returns {ok, error, state}."""
+    if state.get("status") == "all_done":
+        return {"ok": True, "error": None, "state": state}
     payload = build_overall_payload(state["rater_id"], overall_comment)
     try:
         rater_storage.save_response(state["rater_id"], "_overall", payload)
@@ -259,13 +261,25 @@ def build_rater_tab() -> gr.Group:
                     gr.update(),  # screen_thanks
                     gr.update(),  # video_player
                     gr.update(),  # progress_md
+                    gr.update(),  # overall_btn
+                    gr.update(),  # done_md
                     result.get("state") or {"status": "welcome"},  # state
                 )
             new_state = result["state"]
-            if new_state["status"] in ("all_done", "overall_pending"):
-                # Both states land on the thank-you screen; the overall-comment
-                # textbox is the action surface for overall_pending, and harmless
-                # (redundantly visible) for all_done.
+            if new_state["status"] == "all_done":
+                # Rater has already finished — show done message, hide overall form.
+                return (
+                    gr.update(visible=False),                # welcome_error
+                    gr.update(visible=False),                # screen_welcome
+                    gr.update(visible=False),                # screen_rating
+                    gr.update(visible=True),                 # screen_thanks
+                    gr.update(),                             # video_player
+                    gr.update(),                             # progress_md
+                    gr.update(interactive=False),            # overall_btn
+                    gr.update(visible=True),                 # done_md
+                    new_state,
+                )
+            if new_state["status"] == "overall_pending":
                 return (
                     gr.update(visible=False),  # welcome_error
                     gr.update(visible=False),  # screen_welcome
@@ -273,6 +287,8 @@ def build_rater_tab() -> gr.Group:
                     gr.update(visible=True),   # screen_thanks
                     gr.update(),               # video_player
                     gr.update(),               # progress_md
+                    gr.update(),               # overall_btn
+                    gr.update(),               # done_md
                     new_state,
                 )
             # status == "rating"
@@ -286,6 +302,8 @@ def build_rater_tab() -> gr.Group:
                 gr.update(visible=False),
                 gr.update(value=video_path),
                 gr.update(value=f"Video {idx + 1} of {new_state['total']}"),
+                gr.update(),
+                gr.update(),
                 new_state,
             )
 
@@ -293,7 +311,7 @@ def build_rater_tab() -> gr.Group:
             _start_click,
             [rater_id_tb, consent_chk],
             [welcome_error, screen_welcome, screen_rating, screen_thanks,
-             video_player, progress_md, state],
+             video_player, progress_md, overall_btn, done_md, state],
         )
 
         # ---- Submit click ----
@@ -309,7 +327,7 @@ def build_rater_tab() -> gr.Group:
                     gr.update(),  # progress_md
                     gr.update(),  # comment_tb
                     *[gr.update() for _ in DIMENSIONS],
-                    gr.update(interactive=False),  # submit_btn
+                    gr.update(interactive=True),  # submit_btn — keep enabled so rater can retry
                     result["state"],
                 )
             new_state = result["state"]
