@@ -186,7 +186,7 @@ By starting, you confirm you are at least 18 years old and consent to participat
 Questions or concerns: contact the researcher.
 """
 
-_STUDY_VIDEOS_DIR = Path("study_videos")
+_STUDY_VIDEOS_DIR = Path(__file__).resolve().parent.parent / "study_videos"
 
 
 def build_rater_tab() -> gr.Group:
@@ -262,24 +262,17 @@ def build_rater_tab() -> gr.Group:
                     result.get("state") or {"status": "welcome"},  # state
                 )
             new_state = result["state"]
-            if new_state["status"] == "all_done":
+            if new_state["status"] in ("all_done", "overall_pending"):
+                # Both states land on the thank-you screen; the overall-comment
+                # textbox is the action surface for overall_pending, and harmless
+                # (redundantly visible) for all_done.
                 return (
-                    gr.update(visible=False),
-                    gr.update(visible=False),
-                    gr.update(visible=False),
-                    gr.update(visible=True),
-                    gr.update(),
-                    gr.update(),
-                    new_state,
-                )
-            if new_state["status"] == "overall_pending":
-                return (
-                    gr.update(visible=False),
-                    gr.update(visible=False),
-                    gr.update(visible=False),
-                    gr.update(visible=True),
-                    gr.update(),
-                    gr.update(),
+                    gr.update(visible=False),  # welcome_error
+                    gr.update(visible=False),  # screen_welcome
+                    gr.update(visible=False),  # screen_rating
+                    gr.update(visible=True),   # screen_thanks
+                    gr.update(),               # video_player
+                    gr.update(),               # progress_md
                     new_state,
                 )
             # status == "rating"
