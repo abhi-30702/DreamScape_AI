@@ -1,7 +1,10 @@
 import json
+import logging
 from pathlib import Path
 
 import pandas as pd
+
+_log = logging.getLogger(__name__)
 
 DIMENSIONS = [
     "visual_quality", "narration_clarity", "music_mood_fit",
@@ -20,7 +23,7 @@ def _read_submission(path: Path) -> dict | None:
         with path.open("r", encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError) as exc:
-        print(f"warning: skipping malformed submission {path}: {exc}")
+        _log.warning("skipping malformed submission %s: %s", path, exc)
         return None
 
 
@@ -31,7 +34,7 @@ def _load_auto_metrics_by_run_id(eval_runs_dir: Path) -> dict[str, dict[str, flo
             with path.open("r", encoding="utf-8") as f:
                 data = json.load(f)
         except (json.JSONDecodeError, OSError) as exc:
-            print(f"warning: skipping malformed metric file {path}: {exc}")
+            _log.warning("skipping malformed metric file %s: %s", path, exc)
             continue
         run_id = data.get("run_id")
         if not run_id:
@@ -72,7 +75,10 @@ def load_all(
                 continue
             video_id = payload.get("video_id")
             if video_id not in manifest_by_id:
-                print(f"warning: skipping submission for unknown video_id={video_id!r} ({submission_path})")
+                _log.warning(
+                    "skipping submission for unknown video_id=%r (%s)",
+                    video_id, submission_path,
+                )
                 continue
             manifest_entry = manifest_by_id[video_id]
             ratings = payload.get("ratings") or {}
