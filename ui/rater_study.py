@@ -3,6 +3,8 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+import gradio as gr
+
 from ui import rater_storage
 
 APP_VERSION = "0.2.0"
@@ -169,3 +171,211 @@ def on_overall_submit(state: dict, overall_comment: str) -> dict:
         }
     new_state = {**state, "status": "all_done"}
     return {"ok": True, "error": None, "state": new_state}
+
+
+_INFO_SHEET = """\
+### About this study
+
+You will watch up to 20 short AI-generated videos (each 30–90 seconds) and rate
+each on six dimensions. The full session takes about 20 minutes. Your ratings
+are stored in a private dataset for academic analysis. You may stop at any time
+by simply closing the browser tab — any ratings you already submitted are kept.
+
+By starting, you confirm you are at least 18 years old and consent to participate.
+
+Questions or concerns: contact the researcher.
+"""
+
+_STUDY_VIDEOS_DIR = Path("study_videos")
+
+
+def build_rater_tab() -> gr.Group:
+    """Construct the Rate-videos tab content. Mount inside a `gr.TabItem`."""
+    manifest = load_manifest(_STUDY_VIDEOS_DIR / "manifest.json")
+
+    with gr.Group() as tab_root:
+        # ---- Screen A: welcome / consent ----
+        with gr.Group(visible=True) as screen_welcome:
+            gr.Markdown(_INFO_SHEET)
+            consent_chk = gr.Checkbox(label="I am 18+ and consent to participate", value=False)
+            rater_id_tb = gr.Textbox(
+                label="Choose an anonymous ID",
+                placeholder="letters, numbers, underscore (e.g. reviewer_a)",
+                max_lines=1,
+            )
+            welcome_error = gr.Markdown(visible=False)
+            start_btn = gr.Button("Start", variant="primary", interactive=False)
+
+        # ---- Screen B: rating loop ----
+        with gr.Group(visible=False) as screen_rating:
+            progress_md = gr.Markdown("Video 1 of 20")
+            video_player = gr.Video(autoplay=False, show_label=False)
+            gr.Markdown("Rate this video on each dimension (1 = Poor, 5 = Excellent):")
+            radios: list[gr.Radio] = []
+            for key, label, hint in DIMENSIONS:
+                r = gr.Radio(choices=[1, 2, 3, 4, 5], label=label, info=hint)
+                radios.append(r)
+            comment_tb = gr.Textbox(
+                label="Optional: anything specific you noticed?",
+                lines=2,
+            )
+            rating_error = gr.Markdown(visible=False)
+            submit_btn = gr.Button("Submit & next", variant="primary", interactive=False)
+
+        # ---- Screen C: thank-you / overall ----
+        with gr.Group(visible=False) as screen_thanks:
+            thanks_md = gr.Markdown("### Thank you! Your ratings have been saved.")
+            overall_tb = gr.Textbox(label="Any overall feedback?", lines=4)
+            overall_error = gr.Markdown(visible=False)
+            overall_btn = gr.Button("Submit final comment", variant="primary")
+            done_md = gr.Markdown("Done — you can close this tab.", visible=False)
+
+        state = gr.State({"status": "welcome"})
+
+        # ---- Start-button enable logic ----
+        def _toggle_start(consent, rid):
+            ok = bool(consent) and bool(_ID_RE.match(rid or ""))
+            return gr.update(interactive=ok)
+
+        consent_chk.change(_toggle_start, [consent_chk, rater_id_tb], start_btn)
+        rater_id_tb.change(_toggle_start, [consent_chk, rater_id_tb], start_btn)
+
+        # ---- Submit-button enable logic ----
+        def _toggle_submit(*values):
+            ok = all(v is not None for v in values)
+            return gr.update(interactive=ok)
+
+        for r in radios:
+            r.change(_toggle_submit, radios, submit_btn)
+
+        # ---- Start click ----
+        def _start_click(rater_id, consent):
+            result = on_start(rater_id, consent, manifest)
+            if not result["ok"]:
+                return (
+                    gr.update(visible=True, value=f"**{result['error']}**"),  # welcome_error
+                    gr.update(),  # screen_welcome
+                    gr.update(),  # screen_rating
+                    gr.update(),  # screen_thanks
+                    gr.update(),  # video_player
+                    gr.update(),  # progress_md
+                    result.get("state") or {"status": "welcome"},  # state
+                )
+            new_state = result["state"]
+            if new_state["status"] == "all_done":
+                return (
+                    gr.update(visible=False),
+                    gr.update(visible=False),
+                    gr.update(visible=False),
+                    gr.update(visible=True),
+                    gr.update(),
+                    gr.update(),
+                    new_state,
+                )
+            if new_state["status"] == "overall_pending":
+                return (
+                    gr.update(visible=False),
+                    gr.update(visible=False),
+                    gr.update(visible=False),
+                    gr.update(visible=True),
+                    gr.update(),
+                    gr.update(),
+                    new_state,
+                )
+            # status == "rating"
+            idx = new_state["current_index"]
+            entry = manifest[idx]
+            video_path = str(_STUDY_VIDEOS_DIR / entry["filename"])
+            return (
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=True),
+                gr.update(visible=False),
+                gr.update(value=video_path),
+                gr.update(value=f"Video {idx + 1} of {new_state['total']}"),
+                new_state,
+            )
+
+        start_btn.click(
+            _start_click,
+            [rater_id_tb, consent_chk],
+            [welcome_error, screen_welcome, screen_rating, screen_thanks,
+             video_player, progress_md, state],
+        )
+
+        # ---- Submit click ----
+        def _submit_click(state_val, comment_val, *rating_values):
+            ratings = {k: v for (k, _, _), v in zip(DIMENSIONS, rating_values)}
+            result = on_submit(state_val, ratings, comment_val, manifest)
+            if not result["ok"]:
+                return (
+                    gr.update(visible=True, value=f"**{result['error']}**"),  # rating_error
+                    gr.update(),  # screen_rating
+                    gr.update(),  # screen_thanks
+                    gr.update(),  # video_player
+                    gr.update(),  # progress_md
+                    gr.update(),  # comment_tb
+                    *[gr.update() for _ in DIMENSIONS],
+                    gr.update(interactive=False),  # submit_btn
+                    result["state"],
+                )
+            new_state = result["state"]
+            if new_state["status"] == "overall_pending":
+                return (
+                    gr.update(visible=False),
+                    gr.update(visible=False),
+                    gr.update(visible=True),
+                    gr.update(),
+                    gr.update(),
+                    gr.update(value=""),
+                    *[gr.update(value=None) for _ in DIMENSIONS],
+                    gr.update(interactive=False),
+                    new_state,
+                )
+            # next video
+            idx = new_state["current_index"]
+            entry = manifest[idx]
+            video_path = str(_STUDY_VIDEOS_DIR / entry["filename"])
+            return (
+                gr.update(visible=False),
+                gr.update(visible=True),
+                gr.update(visible=False),
+                gr.update(value=video_path),
+                gr.update(value=f"Video {idx + 1} of {new_state['total']}"),
+                gr.update(value=""),
+                *[gr.update(value=None) for _ in DIMENSIONS],
+                gr.update(interactive=False),
+                new_state,
+            )
+
+        submit_btn.click(
+            _submit_click,
+            [state, comment_tb, *radios],
+            [rating_error, screen_rating, screen_thanks, video_player, progress_md,
+             comment_tb, *radios, submit_btn, state],
+        )
+
+        # ---- Overall submit click ----
+        def _overall_click(state_val, overall_val):
+            result = on_overall_submit(state_val, overall_val)
+            if not result["ok"]:
+                return (
+                    gr.update(visible=True, value=f"**{result['error']}**"),  # overall_error
+                    gr.update(),  # done_md
+                    gr.update(),  # overall_btn
+                    result["state"],
+                )
+            return (
+                gr.update(visible=False),
+                gr.update(visible=True),
+                gr.update(interactive=False),
+                result["state"],
+            )
+
+        overall_btn.click(
+            _overall_click,
+            [state, overall_tb],
+            [overall_error, done_md, overall_btn, state],
+        )
+
+    return tab_root
